@@ -19,6 +19,7 @@ import openpi.models.pi0_fast as pi0_fast
 import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
+import openpi.policies.inin_policy as inin_policy
 import openpi.policies.libero_policy as libero_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
@@ -352,6 +353,59 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotIninDataConfig(DataConfigFactory):
+    """Data config for the inin UR5 platform (dataset written by openpi.inin.collect).
+
+    The dataset stores the raw bc-ur5-v2 representation (14D state with a
+    quaternion TCP pose, 8D absolute xyz+quat+gripper action chunks);
+    IninInputs converts both to 7D xyz+rotvec+gripper before DeltaActions.
+    """
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        # Match the LeRobot dataset keys to the keys used by openpi.inin.serve
+        # when building inference observations.
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "image": "observation.images.base",
+                        "wrist_image": "observation.images.wrist",
+                        "state": "observation.state",
+                        "actions": "action",
+                        # Injected by PromptFromLeRobotTask (prompt_from_task=True);
+                        # RepackTransform drops any key not listed here.
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[inin_policy.IninInputs(model_type=model_config.model_type)],
+            outputs=[inin_policy.IninOutputs()],
+        )
+
+        # Actions in the dataset are absolute TCP poses; convert the pose
+        # dimensions (xyz + rotvec) to deltas and keep the gripper absolute.
+        delta_action_mask = _transforms.make_bool_mask(6, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+            action_sequence_keys=("action",),
         )
 
 
@@ -759,6 +813,67 @@ _CONFIGS = [
         ema_decay=0.999,
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         pytorch_weight_path="/path/to/your/pytorch_weight_path",
+        num_train_steps=30_000,
+    ),
+    #
+    # Fine-tuning config for the inin UR5 platform (data collected via scripts/inin_collect.py).
+    # Run compute_norm_stats.py and train.py with HF_LEROBOT_HOME pointing at the collection data root.
+    #
+    TrainConfig(
+        name="pi05_inin_ur5",
+        # action_horizon sets the chunk length the policy predicts, which is
+        # longer than the bc-ur5-v2 schema's advisory action_inference chunk_size
+        # (16). scripts/inin_serve.py sends the full horizon; the synchronous
+        # server truncates it to --exec-steps. Changing this requires retraining.
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50, discrete_state_input=False),
+        data=LeRobotIninDataConfig(
+            repo_id="inin/ur5_stack_blocks",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        # Training/inference run on PyTorch (scripts/train_pytorch.py); the JAX
+        # weight_loader is kept only for train.py compatibility.
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/mnt/cpfs/zbl-cpfs-new/CKPT/harryjhou/pi05_base_pytorch",
+        # Checkpoints land in <checkpoint_base_dir>/<config name>/<exp_name>/<step>.
+        checkpoint_base_dir="/mnt/cpfs/zbl-cpfs-new/CKPT/harryjhou",
+        num_train_steps=30_000,
+    ),
+    TrainConfig(
+        name="pi05_ur5_stack_blocks",
+        # action_horizon sets the chunk length the policy predicts, which is
+        # longer than the bc-ur5-v2 schema's advisory action_inference chunk_size
+        # (16). scripts/inin_serve.py sends the full horizon; the synchronous
+        # server truncates it to --exec-steps. Changing this requires retraining.
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50, discrete_state_input=False),
+        data=LeRobotIninDataConfig(
+            repo_id="inin/ur5_stack_blocks",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        # Training/inference run on PyTorch (scripts/train_pytorch.py); the JAX
+        # weight_loader is kept only for train.py compatibility.
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/mnt/cpfs/zbl-cpfs-new/CKPT/harryjhou/pi05_base_pytorch",
+        # Checkpoints land in <checkpoint_base_dir>/<config name>/<exp_name>/<step>.
+        checkpoint_base_dir="/mnt/cpfs/zbl-cpfs-new/CKPT/harryjhou",
+        num_train_steps=30_000,
+    ),
+    TrainConfig(
+        name="pi05_ur5_insert_battery",
+        # action_horizon sets the chunk length the policy predicts, which is
+        # longer than the bc-ur5-v2 schema's advisory action_inference chunk_size
+        # (16). scripts/inin_serve.py sends the full horizon; the synchronous
+        # server truncates it to --exec-steps. Changing this requires retraining.
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50, discrete_state_input=False),
+        data=LeRobotIninDataConfig(
+            repo_id="inin/ur5_insert_battery",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        # Training/inference run on PyTorch (scripts/train_pytorch.py); the JAX
+        # weight_loader is kept only for train.py compatibility.
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        pytorch_weight_path="/mnt/cpfs/zbl-cpfs-new/CKPT/harryjhou/pi05_base_pytorch",
+        # Checkpoints land in <checkpoint_base_dir>/<config name>/<exp_name>/<step>.
+        checkpoint_base_dir="/mnt/cpfs/zbl-cpfs-new/CKPT/harryjhou",
         num_train_steps=30_000,
     ),
     #

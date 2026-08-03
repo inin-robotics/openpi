@@ -61,12 +61,19 @@ rlds = [
     "tensorflow-cpu==2.15.0",
     "tensorflow-datasets==4.9.9",
 ]
+# gRPC bridge to the inin robot workstation (data collection + serving).
+# Kept in a dependency group because its protobuf>=6.33 requirement conflicts
+# with the rlds group's tensorflow-cpu==2.15.0 (protobuf<5).
+inin = ["inin-stream"]
 
 [tool.uv]
 override-dependencies = ["ml-dtypes==0.4.1", "tensorstore==0.1.74"]
+default-groups = ["dev", "inin"]
+conflicts = [[{ group = "rlds" }, { group = "inin" }]]
 
 [tool.uv.sources]
 openpi-client = { workspace = true }
+inin-stream = { path = "../inin-stream", editable = true }
 lerobot = { git = "https://github.com/huggingface/lerobot", rev = "0cf864870cf29f4738d3ade893e6fd13fbd7cdb5" }
 dlimp = { git = "https://github.com/kvablack/dlimp", rev = "ad72ce3a9b414db2185bc0b38461d4101a65477a" }
 
