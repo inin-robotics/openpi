@@ -4,3 +4,7 @@
 [submodule "third_party/libero"]
 	path = third_party/libero
 	url = https://github.com/Lifelong-Robot-Learning/LIBERO.git
+[submodule "third_party/inin-stream"]
+	path = third_party/inin-stream
+	url = https://github.com/inin-robotics/inin-stream.git
+	branch = openpi

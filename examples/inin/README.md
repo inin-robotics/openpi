@@ -1,8 +1,15 @@
 # inin UR5 平台接入（采集 / 训练 / 推理）
 
 本目录说明 openpi 与 inin 机器人工作站的对接方式。机器人端继续使用
-[inin-stream](../../../inin-stream) 的 `WorkstationStreamClient`（gRPC 双向流 +
-schema 哈希握手，schema 为 `bc-ur5-v2`），机器人端代码无需任何修改。
+[inin-stream](../../third_party/inin-stream) 的 `WorkstationStreamClient`（gRPC
+双向流 + schema 哈希握手，schema 为 `bc-ur5-v2`），机器人端代码无需任何修改。
+
+`inin-stream` 以 git 子模块的形式位于 `third_party/inin-stream`，因此在
+`uv sync` 之前必须先初始化子模块：
+
+```bash
+git submodule update --init third_party/inin-stream
+```
 
 ## 架构
 
